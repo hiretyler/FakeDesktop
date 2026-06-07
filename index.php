@@ -524,6 +524,16 @@ if (isset($_GET['read'])) {
         }
 
         /* ============================================================ */
+        /* SCREENSAVER: Starfield warp                                 */
+        /* ============================================================ */
+        .ee-screensaver-overlay {
+          position: fixed; inset: 0;
+          background: #000; z-index: 99999;
+          overflow: hidden; cursor: none;
+        }
+        .ee-screensaver-overlay canvas { display: block; }
+
+        /* ============================================================ */
         /* EASTER EGG: Force Quit                                      */
         /* ============================================================ */
         .ee-forcequit-backdrop {
@@ -1487,6 +1497,73 @@ if (isset($_GET['read'])) {
       );
 
       // ================================================================
+      // SCREENSAVER: Starfield warp (the Windows "fly through space"
+      // effect, in glorious 1-bit black and white). Defined outside App
+      // so its canvas/rAF loop isn't torn down on every parent render.
+      // ================================================================
+      const StarfieldScreensaver = ({ onDismiss }) => {
+        const canvasRef = useRef(null);
+        useEffect(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          let w, h, cx, cy;
+          const resize = () => {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+            cx = w / 2; cy = h / 2;
+          };
+          resize();
+
+          const STAR_COUNT = 450;
+          const SPEED = 9;
+          const stars = [];
+          const spawn = (s) => {
+            s.x = (Math.random() * 2 - 1) * w;
+            s.y = (Math.random() * 2 - 1) * h;
+            s.z = Math.random() * w;
+            s.pz = s.z;
+          };
+          for (let i = 0; i < STAR_COUNT; i++) { const s = {}; spawn(s); stars.push(s); }
+
+          let raf;
+          const draw = () => {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#fff';
+            for (const s of stars) {
+              s.pz = s.z;
+              s.z -= SPEED;
+              if (s.z < 1) { spawn(s); continue; }
+              const sx = cx + (s.x / s.z) * w;
+              const sy = cy + (s.y / s.z) * h;
+              // off-screen? recycle so streaks stay near the field
+              if (sx < 0 || sx > w || sy < 0 || sy > h) { spawn(s); continue; }
+              const px = cx + (s.x / s.pz) * w;
+              const py = cy + (s.y / s.pz) * h;
+              ctx.lineWidth = Math.max(0.5, (1 - s.z / w) * 2.6);
+              ctx.beginPath();
+              ctx.moveTo(px, py);
+              ctx.lineTo(sx, sy);
+              ctx.stroke();
+            }
+            raf = requestAnimationFrame(draw);
+          };
+          draw();
+          window.addEventListener('resize', resize);
+          return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener('resize', resize);
+          };
+        }, []);
+        return (
+          <div className="ee-screensaver-overlay" onPointerDown={onDismiss}>
+            <canvas ref={canvasRef}></canvas>
+          </div>
+        );
+      };
+
+      // ================================================================
       // EASTER EGG: Force Quit dialog
       // ================================================================
       const FQFolderIcon = ({ selected }) => (
@@ -1591,6 +1668,9 @@ if (isset($_GET['read'])) {
         // EASTER EGG: Keyboard shortcuts
         const [toasterActive, setToasterActive] = useState(false);
         const [toasterEntities, setToasterEntities] = useState([]);
+        const [screensaverActive, setScreensaverActive] = useState(false);
+        const screensaverTimer = useRef(null);
+        const idleSaverIndex = useRef(0);
         const keyBufferRef = useRef('');
         const [forceQuitOpen, setForceQuitOpen] = useState(false);
 
@@ -1682,6 +1762,40 @@ if (isset($_GET['read'])) {
           window.addEventListener('pointerdown', resetIdle, { passive: true });
           return () => {
             if (floppyIdleTimer.current) clearTimeout(floppyIdleTimer.current);
+            window.removeEventListener('mousemove', resetIdle);
+            window.removeEventListener('keydown', resetIdle);
+            window.removeEventListener('pointerdown', resetIdle);
+          };
+        }, []);
+
+        // SCREENSAVER: After 30s idle, alternate between the Starfield
+        // warp and the Flying Toasters — each idle period flips to the
+        // other. Any mouse/key/pointer activity dismisses whichever is
+        // showing and restarts the countdown.
+        useEffect(() => {
+          if (IS_NESTED) return;
+          const IDLE_DELAY = 30000;
+          const showSaver = () => {
+            if (idleSaverIndex.current % 2 === 0) {
+              setScreensaverActive(true);
+            } else {
+              setToasterEntities(buildToasterEntities());
+              setToasterActive(true);
+            }
+            idleSaverIndex.current += 1;
+          };
+          const resetIdle = () => {
+            setScreensaverActive(false);
+            setToasterActive(false);
+            if (screensaverTimer.current) clearTimeout(screensaverTimer.current);
+            screensaverTimer.current = setTimeout(showSaver, IDLE_DELAY);
+          };
+          resetIdle();
+          window.addEventListener('mousemove', resetIdle, { passive: true });
+          window.addEventListener('keydown', resetIdle, { passive: true });
+          window.addEventListener('pointerdown', resetIdle, { passive: true });
+          return () => {
+            if (screensaverTimer.current) clearTimeout(screensaverTimer.current);
             window.removeEventListener('mousemove', resetIdle);
             window.removeEventListener('keydown', resetIdle);
             window.removeEventListener('pointerdown', resetIdle);
@@ -2035,6 +2149,12 @@ if (isset($_GET['read'])) {
         };
         const dismissToasters = () => setToasterActive(false);
         const closeForceQuit = () => setForceQuitOpen(false);
+        const dismissScreensaver = () => setScreensaverActive(false);
+        const handleStartScreensaver = (e) => {
+          e.stopPropagation();
+          closeAllMenus();
+          setScreensaverActive(true);
+        };
 
         // --- Icon Physics ---
         const NON_POOF_TARGETS = new Set(['trash', 'root']);
@@ -2168,6 +2288,9 @@ if (isset($_GET['read'])) {
             {toasterActive && (
               <ToasterOverlay entities={toasterEntities} onDismiss={dismissToasters} />
             )}
+            {screensaverActive && (
+              <StarfieldScreensaver onDismiss={dismissScreensaver} />
+            )}
             {forceQuitOpen && (
               <ForceQuitModal windows={windows} closeWindow={closeWindow} onClose={closeForceQuit} />
             )}
@@ -2188,6 +2311,8 @@ if (isset($_GET['read'])) {
                       <div className="mac-dropdown-item" onPointerDown={handleSoundToggle}>
                         <span className="ee-sound-menu-item-check">{soundEnabled ? '✓' : ''}</span>Sound
                       </div>
+                      <div className="mac-dropdown-divider"></div>
+                      <div className="mac-dropdown-item" onPointerDown={handleStartScreensaver}>Start Screen Saver</div>
                       <div className="mac-dropdown-divider"></div>
                       <div className="mac-dropdown-item" onPointerDown={handleShutDownClick}>Shut Down</div>
                     </div>
