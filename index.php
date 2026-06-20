@@ -18,8 +18,10 @@ if (isset($_GET['api'])) {
         
         foreach ($items as $item) {
             if ($item === '.' || $item === '..') continue;
+            // Hide dotfiles/hidden dirs (.git, .claude, .DS_Store, .gitignore) from the listing
+            if ($item[0] === '.') continue;
             // Hide this script itself from the desktop view
-            if ($dir === $baseDir && $item === basename(__FILE__)) continue; 
+            if ($dir === $baseDir && $item === basename(__FILE__)) continue;
             
             $path = $dir . DIRECTORY_SEPARATOR . $item;
             $isDir = is_dir($path);
