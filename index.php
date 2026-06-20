@@ -93,7 +93,10 @@ if (isset($_GET['read'])) {
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Pinned to Babel 7: Babel 8's preset-react defaults to the automatic JSX
+         runtime, which emits an `import` statement that breaks when Babel Standalone
+         injects the transpiled code as a classic (non-module) script. -->
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Chicago&display=swap');
